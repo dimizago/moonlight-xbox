@@ -5,7 +5,9 @@
 
 #include "pch.h"
 #include "StreamPage.xaml.h"
+#include "../Plot/ImGuiPlots.h"
 #include "../Streaming/AudioPlayer.h"
+#include "../Streaming/FrameQueue.h"
 #include "../Streaming/FFMpegDecoder.h"
 #include <Utils.hpp>
 #include <KeyboardControl.xaml.h>
@@ -326,7 +328,12 @@ void StreamPage::toggleHDR_WinAltB_Click(Platform::Object^ sender, Windows::UI::
 
 void StreamPage::resetDecoder_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)
 {
+	// start with a fresh IDR
 	LiRequestIdrFrame();
+
+	// This also is a handy place to flush the queue
+	FrameQueue::instance().clear();
+	ImGuiPlots::instance().clearData(PLOT_QUEUED_FRAMES);
 }
 
 void StreamPage::toggleFramePacing_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)

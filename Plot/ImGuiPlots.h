@@ -20,6 +20,7 @@ class ImGuiPlots
 	void setEnabled(bool enabled) { m_isEnabled = enabled; }
 
 	void clearData();
+	void clearData(int plotId);
 	void observeFloat(int plotId, float value);
 	float observeFloatReturnAvg(int plotId, float value);
 	float getAvg(int plotId);

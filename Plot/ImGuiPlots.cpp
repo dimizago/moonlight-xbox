@@ -41,6 +41,12 @@ void ImGuiPlots::clearData()
 		p.buffer.clear();
 }
 
+void ImGuiPlots::clearData(int plotId)
+{
+    assert(plotId >= 0 && plotId < PlotCount);
+    plots_[static_cast<std::size_t>(plotId)].buffer.clear();
+}
+
 void ImGuiPlots::observeFloat(int plotId, float value)
 {
     if (!m_isEnabled) return;
