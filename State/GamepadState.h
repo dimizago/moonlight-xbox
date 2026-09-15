@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
+#include <Limelight.h>
 #include "Utils.hpp"
 
 enum class ComboState {
@@ -32,7 +34,11 @@ struct GamepadState {
 	bool didSendArrival;                        // do we need to send LiSendControllerArrivalEvent?
 	int64_t lastArrivalAttemptQpc;
 	std::atomic<bool> isGuideButtonDown{false}; // are we currently holding down the (virtual) Guide button?
-	int64_t lastBatteryPollQpc;
+	// Battery work is due immediately on connection, then at most once every two minutes.
+	int64_t nextBatteryPollQpc;
+	bool shouldUpdateBattery;
+	uint8_t batteryState;
+	uint8_t batteryPercentage;
 	uint8_t lastBatteryState;
 	uint8_t lastBatteryPercentage;
 	bool didSendBattery;
@@ -81,9 +87,10 @@ struct GamepadState {
 		didSendArrival = false;
 		lastArrivalAttemptQpc = 0;
 		isGuideButtonDown.store(false);
-		lastBatteryPollQpc = 0;
-		lastBatteryState = 0;
-		lastBatteryPercentage = 0;
+		nextBatteryPollQpc = 0;
+		shouldUpdateBattery = false;
+		batteryState = lastBatteryState = LI_BATTERY_STATE_UNKNOWN;
+		batteryPercentage = lastBatteryPercentage = LI_BATTERY_PERCENTAGE_UNKNOWN;
 		didSendBattery = false;
 		batteryReportingUnsupported = false;
 		previousGuideButtonDown = false;
@@ -98,6 +105,80 @@ struct GamepadState {
 		combo.startTime = 0;
 	}
 
+	// Called only when due, after sending input. Advance the deadline before reading so
+	// exceptions and failed sends also wait a full interval before retrying.
+	bool UpdateBattery() {
+		if (!shouldUpdateBattery || controller == nullptr || batteryReportingUnsupported) {
+			return false;
+		}
+		shouldUpdateBattery = false;
+		nextBatteryPollQpc = QpcNow() + MsToQpc(kBatteryPollIntervalMs);
+
+		try {
+			ReadBattery();
+		} catch (Platform::Exception ^ exception) {
+			moonlight_xbox_dx::Utils::Logf("UpdateBattery: failed to read Gamepad #%d battery: 0x%08X\n", localId, static_cast<unsigned>(exception->HResult));
+			return false;
+		}
+
+		return !didSendBattery || batteryState != lastBatteryState || batteryPercentage != lastBatteryPercentage;
+	}
+
+	void OnBatterySent(int rc) {
+		if (rc == LI_ERR_UNSUPPORTED) {
+			batteryReportingUnsupported = true;
+			moonlight_xbox_dx::Utils::Logf("SendGamepadBattery: host does not support battery reporting for Gamepad #%d\n", localId);
+			return;
+		}
+		if (rc != 0) {
+			moonlight_xbox_dx::Utils::Logf("SendGamepadBattery: failed to send Gamepad #%d battery: %d\n", localId, rc);
+			return;
+		}
+
+		lastBatteryState = batteryState;
+		lastBatteryPercentage = batteryPercentage;
+		didSendBattery = true;
+		moonlight_xbox_dx::Utils::Logf("SendGamepadBattery: sent Gamepad #%d state %d at %d%%\n", localId, batteryState, batteryPercentage);
+	}
+
+private:
+	static constexpr int64_t kBatteryPollIntervalMs = 120 * 1000;
+
+	void ReadBattery() {
+		using namespace Windows::System::Power;
+
+		batteryState = LI_BATTERY_STATE_UNKNOWN;
+		batteryPercentage = LI_BATTERY_PERCENTAGE_UNKNOWN;
+		auto report = controller->TryGetBatteryReport();
+		if (report == nullptr) {
+			return;
+		}
+
+		auto remaining = report->RemainingCapacityInMilliwattHours;
+		auto full = report->FullChargeCapacityInMilliwattHours;
+		if (remaining != nullptr && full != nullptr && full->Value > 0) {
+			const double capacity = static_cast<double>(remaining->Value) / full->Value;
+			batteryPercentage = static_cast<uint8_t>(std::clamp(std::lround(capacity * 100.0), 0L, 100L));
+		}
+
+		switch (report->Status) {
+		case BatteryStatus::NotPresent:
+			batteryState = LI_BATTERY_STATE_NOT_PRESENT;
+			batteryPercentage = LI_BATTERY_PERCENTAGE_UNKNOWN;
+			break;
+		case BatteryStatus::Discharging:
+			batteryState = LI_BATTERY_STATE_DISCHARGING;
+			break;
+		case BatteryStatus::Charging:
+			batteryState = LI_BATTERY_STATE_CHARGING;
+			break;
+		case BatteryStatus::Idle:
+			batteryState = batteryPercentage == 100 ? LI_BATTERY_STATE_FULL : LI_BATTERY_STATE_NOT_CHARGING;
+			break;
+		}
+	}
+
+public:
 	// Drop any pending sub-unit motion and force the next poll to re-seed its timestamps.
 	// Entering mouse mode doesn't need to call this: the first poll after a gap longer than
 	// kMaxDtSec is discarded and re-seeds itself, so a stale dt can't fling the cursor.
@@ -118,9 +199,10 @@ struct GamepadState {
 		return isGuideButtonDown.load();
 	}
 
-	ComboResult GetComboResult(int comboTimeoutMs) {
+	ComboResult GetComboResult(int comboTimeoutMs, int64_t now) {
 		using namespace Windows::Gaming::Input;
 
+		shouldUpdateBattery = false;
 		ComboResult result = ComboResult{EmptyReading(), EmptyReading(), false};
 		if (controller == nullptr) {
 			return result;
@@ -135,6 +217,10 @@ struct GamepadState {
 		if (gamepad == nullptr) {
 			return result;
 		}
+
+		// Reuse the input loop clock: no clock query, interval conversion, or battery API
+		// call on the usual 500 Hz path, even when the controller reading is unchanged.
+		shouldUpdateBattery = didSendArrival && !batteryReportingUnsupported && now >= nextBatteryPollQpc;
 
 		result.currentReading = gamepad->GetCurrentReading();
 		auto buttons = result.currentReading.Buttons;
@@ -155,18 +241,18 @@ struct GamepadState {
 				// Check if either button is newly pressed
 			} else if (viewCurrentlyPressed && !combo.viewPressed) {
 				combo.comboState = ComboState::ViewWaiting;
-				combo.startTime = QpcNow();
+				combo.startTime = now;
 				maskedButtons = clearButtons(buttons, GamepadButtons::View);
 			} else if (menuCurrentlyPressed && !combo.menuPressed) {
 				combo.comboState = ComboState::MenuWaiting;
-				combo.startTime = QpcNow();
+				combo.startTime = now;
 				maskedButtons = clearButtons(buttons, GamepadButtons::Menu);
 			}
 			break;
 
 		case ComboState::ViewWaiting:
 			// Check timeout
-			if (QpcToMs(QpcNow() - combo.startTime) > comboTimeoutMs) {
+			if (QpcToMs(now - combo.startTime) > comboTimeoutMs) {
 				combo.comboState = ComboState::None;
 				maskedButtons = setButtons(buttons, GamepadButtons::View);
 				break;
@@ -191,7 +277,7 @@ struct GamepadState {
 			break;
 
 		case ComboState::MenuWaiting:
-			if (QpcToMs(QpcNow() - combo.startTime) > comboTimeoutMs) {
+			if (QpcToMs(now - combo.startTime) > comboTimeoutMs) {
 				combo.comboState = ComboState::None;
 				maskedButtons = setButtons(buttons, GamepadButtons::Menu);
 				break;
@@ -345,12 +431,13 @@ struct GamepadState {
 		char buttons[128];
 		DumpButtons(reading.Buttons, buttons, sizeof(buttons));
 		moonlight_xbox_dx::Utils::Logf(
-		    "GamepadState[localId: %d, hostId: %d] buttons: %s %s axes: %d %d, %d %d, triggers: %d %d, combo{ state: %d, viewPressed: %d, menuPressed: %d, startTime: %d }\n",
+		    "GamepadState[localId: %d, hostId: %d] buttons: %s %s axes: %d %d, %d %d, triggers: %d %d, combo{ state: %d, viewPressed: %d, menuPressed: %d, startTime: %d }, battery{ state: %d, percentage: %d }\n",
 		    localId, hostId,
 		    buttons,
 		    isGuideButtonDown.load() ? "Guide" : "",
 		    ltX, ltY, rtX, rtY,
 		    lTrig, rTrig,
-		    combo.comboState, combo.viewPressed, combo.menuPressed, combo.startTime);
+		    combo.comboState, combo.viewPressed, combo.menuPressed, combo.startTime,
+		    batteryState, batteryPercentage);
 	}
 };

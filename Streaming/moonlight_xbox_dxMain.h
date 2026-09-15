@@ -43,7 +43,7 @@ namespace moonlight_xbox_dx
 
 		MoonlightClient* moonlightClient;
 	private:
-		void ProcessInput();
+		void ProcessInput(int64_t now);
 		void Update();
 		bool Render();
 		void RenderImGui();
@@ -78,7 +78,7 @@ namespace moonlight_xbox_dx
 		void DumpGamepads();
 		void RefreshGamepads();
 		bool SendGamepadArrival(GamepadState& state);
-		void UpdateGamepadBattery(GamepadState& state);
+		void SendGamepadBattery(GamepadState& state);
 		void SendGamepadReadingForState(GamepadState& state, Windows::Gaming::Input::GamepadReading& reading);
 	};
 }
