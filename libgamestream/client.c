@@ -48,6 +48,7 @@
 #include <openssl/x509.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#include <gamingdeviceinformation.h>
 
 #define UNIQUE_FILE_NAME "uniqueid.dat"
 #define P12_FILE_NAME "client.p12"
@@ -77,6 +78,32 @@ const char* gs_error;
 #define SIGNATURE_LEN 256
 
 #define UUID_STRLEN 37
+
+// Shown during pairing in the Sunshine web UI
+static const char *get_device_name() {
+  GAMING_DEVICE_MODEL_INFORMATION info;
+  if (SUCCEEDED(GetGamingDeviceModelInformation(&info))) {
+    if (info.vendorId == GAMING_DEVICE_VENDOR_ID_MICROSOFT) {
+      switch (info.deviceId) {
+      case GAMING_DEVICE_DEVICE_ID_XBOX_SERIES_S:
+        return "Xbox%20Series%20S";
+      case GAMING_DEVICE_DEVICE_ID_XBOX_SERIES_X:
+      case GAMING_DEVICE_DEVICE_ID_XBOX_SERIES_X_DEVKIT:
+        return "Xbox%20Series%20X";
+      case GAMING_DEVICE_DEVICE_ID_XBOX_ONE:
+        return "Xbox%20One";
+      case GAMING_DEVICE_DEVICE_ID_XBOX_ONE_S:
+        return "Xbox%20One%20S";
+      case GAMING_DEVICE_DEVICE_ID_XBOX_ONE_X:
+      case GAMING_DEVICE_DEVICE_ID_XBOX_ONE_X_DEVKIT:
+        return "Xbox%20One%20X";
+      default:
+        break;
+      }
+    }
+  }
+  return "Xbox";
+}
 
 static int mkdirtree(const char* directory) {
   char buffer[PATH_MAX];
@@ -492,7 +519,14 @@ int gs_pair(PSERVER_DATA server, char* pin) {
 
   uuid_generate_random(&uuid);
   uuid_unparse(&uuid, uuid_str);
-  snprintf(url, sizeof(url), "http://%s:%u/pair?uniqueid=%s&uuid=%s&devicename=roth&updateState=1&phrase=getservercert&salt=%s&clientcert=%s", server->serverInfo.address, server->httpPort, unique_id, uuid_str, salt_hex, cert_hex);
+  snprintf(url, sizeof(url), "http://%s:%u/pair?uniqueid=%s&uuid=%s&devicename=%s&updateState=1&phrase=getservercert&salt=%s&clientcert=%s",
+    server->serverInfo.address,
+    server->httpPort,
+    unique_id,
+    uuid_str,
+    get_device_name(),
+    salt_hex,
+    cert_hex);
   PHTTP_DATA data = http_create_data();
   CURL *curl = get_curl_handle();
   if (data == NULL)
