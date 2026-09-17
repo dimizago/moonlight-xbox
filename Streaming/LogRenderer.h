@@ -27,5 +27,6 @@ namespace moonlight_xbox_dx
 		bool                                 m_visible;
 		uint32_t                             m_displayWidth;
 		uint32_t                             m_displayHeight;
+		double                               m_lastUpdateSeconds;
 	};
 }

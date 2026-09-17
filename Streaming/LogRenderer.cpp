@@ -14,7 +14,8 @@ LogRenderer::LogRenderer(const std::shared_ptr<DX::DeviceResources>& deviceResou
 	m_warningConsole(std::make_unique<DX::TextConsole>()),
 	m_deviceResources(deviceResources),
 	m_mutex(),
-	m_visible(false)
+	m_visible(false),
+	m_lastUpdateSeconds(0.0)
 {
 	m_console->SetForegroundColor(Colors::Yellow);
 	m_warningConsole->SetForegroundColor(Colors::Red);
@@ -29,8 +30,7 @@ void LogRenderer::Update(DX::StepTimer const& timer)
 	std::lock_guard<std::mutex> lock(m_mutex);
 
 	// Only update the console once per second
-	static double lastUpdateSeconds = 0.0;
-	if (m_visible && timer.GetTotalSeconds() - lastUpdateSeconds >= 1.0) {
+	if (m_visible && timer.GetTotalSeconds() - m_lastUpdateSeconds >= 1.0) {
 		m_console->Clear();
 
 		Utils::logMutex.lock();
@@ -40,7 +40,7 @@ void LogRenderer::Update(DX::StepTimer const& timer)
 		}
 		Utils::logMutex.unlock();
 
-		lastUpdateSeconds = timer.GetTotalSeconds();
+		m_lastUpdateSeconds = timer.GetTotalSeconds();
 	}
 }
 
@@ -85,6 +85,7 @@ void LogRenderer::CreateWindowSizeDependentResources()
 
 void LogRenderer::ReleaseDeviceDependentResources()
 {
+	Utils::Log("LogRenderer::ReleaseDeviceDependentResources()\n");
 	m_console->ReleaseDevice();
 	m_warningConsole->ReleaseDevice();
 }
