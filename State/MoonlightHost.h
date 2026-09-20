@@ -28,6 +28,7 @@ namespace moonlight_xbox_dx {
         Platform::String^ audioConfig = "Stereo";
         Platform::String^ framePacing = "";
         Platform::String^ audioBuffer = "30 ms";
+        int packetSize = 1392;
         bool enableHDR = false;
         bool enableSOPS = false;
         bool enableStats = false;
@@ -238,6 +239,16 @@ namespace moonlight_xbox_dx {
                 if (audioBuffer == value) return;
                 this->audioBuffer = value;
                 OnPropertyChanged("AudioBuffer");
+            }
+        }
+
+        property int PacketSize
+        {
+            int get() { return this->packetSize; }
+            void set(int value) {
+                if (packetSize == value) return;
+                this->packetSize = value;
+                OnPropertyChanged("PacketSize");
             }
         }
 

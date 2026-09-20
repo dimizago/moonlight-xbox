@@ -170,6 +170,7 @@ void AppPage::Connect(int appId) {
 	config->enableSOPS = host->EnableSOPS;
 	config->framePacing = host->FramePacing;
 	config->audioBuffer = host->AudioBuffer;
+	config->packetSize = host->PacketSize;
 	config->enableStats = host->EnableStats;
 	config->enableGraphs = host->EnableGraphs;
 

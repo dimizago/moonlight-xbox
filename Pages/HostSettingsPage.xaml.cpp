@@ -102,6 +102,15 @@ void HostSettingsPage::OnNavigatedTo(Windows::UI::Xaml::Navigation::NavigationEv
 		}
 	}
 
+	AvailablePacketSizes->Append(1392);
+	AvailablePacketSizes->Append(1024);
+	for (int i = 0; i < AvailablePacketSizes->Size; i++) {
+		if (host->PacketSize == AvailablePacketSizes->GetAt(i)) {
+			PacketSizeSelector->SelectedIndex = i;
+			break;
+		}
+	}
+
 	if (info.vendorId == GAMING_DEVICE_VENDOR_ID_MICROSOFT) {
 		// Old Xbox One can only use H264, remove from settings everything else
 		if (info.deviceId == GAMING_DEVICE_DEVICE_ID_XBOX_ONE) {
@@ -202,6 +211,16 @@ void HostSettingsPage::FramePacing_SelectionChanged(Platform::Object^ sender, Wi
 	}
 
 	host->FramePacing = selectedFramePacing;
+}
+
+void HostSettingsPage::PacketSizeSelector_SelectionChanged(Platform::Object^ sender, Windows::UI::Xaml::Controls::SelectionChangedEventArgs^ e)
+{
+	if (host == nullptr || e->AddedItems->Size == 0) return;
+	int selectedPacketSize = (int)e->AddedItems->GetAt(0);
+
+	PacketSize1392Desc->Visibility = selectedPacketSize == 1392 ? Windows::UI::Xaml::Visibility::Visible : Windows::UI::Xaml::Visibility::Collapsed;
+	PacketSize1024Desc->Visibility = selectedPacketSize == 1024 ? Windows::UI::Xaml::Visibility::Visible : Windows::UI::Xaml::Visibility::Collapsed;
+	host->PacketSize = selectedPacketSize;
 }
 
 void HostSettingsPage::GlobalSettingsOption_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e)

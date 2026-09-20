@@ -24,6 +24,7 @@ namespace moonlight_xbox_dx
 		Windows::Foundation::Collections::IVector<Platform::String^>^ availableVideoCodecs;
 		Windows::Foundation::Collections::IVector<Platform::String^>^ availableFramePacing;
 		Windows::Foundation::Collections::IVector<Platform::String^>^ availableAudioBuffers;
+		Windows::Foundation::Collections::IVector<int>^ availablePacketSizes;
 		int currentResolutionIndex = 0;
 		int currentAppIndex = 0;
 		Windows::Foundation::EventRegistrationToken m_back_cookie;
@@ -98,6 +99,16 @@ namespace moonlight_xbox_dx
 			}
 		}
 
+		property Windows::Foundation::Collections::IVector<int>^ AvailablePacketSizes {
+			Windows::Foundation::Collections::IVector<int>^ get() {
+				if (this->availablePacketSizes == nullptr)
+				{
+					this->availablePacketSizes = ref new Platform::Collections::Vector<int>();
+				}
+				return this->availablePacketSizes;
+			}
+		}
+
 		property int CurrentResolutionIndex
 		{
 			int get() { return this->currentResolutionIndex; }
@@ -121,6 +132,7 @@ namespace moonlight_xbox_dx
 		void BitrateInput_TextChanged(Platform::Object^ sender, Windows::UI::Xaml::Controls::TextChangedEventArgs^ e);
 		void AutoStartSelector_SelectionChanged(Platform::Object^ sender, Windows::UI::Xaml::Controls::SelectionChangedEventArgs^ e);
 		void FramePacing_SelectionChanged(Platform::Object^ sender, Windows::UI::Xaml::Controls::SelectionChangedEventArgs^ e);
+		void PacketSizeSelector_SelectionChanged(Platform::Object^ sender, Windows::UI::Xaml::Controls::SelectionChangedEventArgs^ e);
 		void GlobalSettingsOption_Click(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e);
 		void BitrateInput_KeyDown(Platform::Object^ sender, Windows::UI::Xaml::Input::KeyRoutedEventArgs^ e);
 		void OnLoaded(Platform::Object^ sender, Windows::UI::Xaml::RoutedEventArgs^ e);
