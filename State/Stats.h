@@ -33,7 +33,8 @@ typedef struct _VIDEO_STATS {
 	uint32_t totalHostProcessingLatency;
 	uint32_t framesWithHostProcessingLatency;
 	uint32_t totalReassemblyTimeUs;
-	double totalDecodeTime;
+	double totalDecodeTimeMs;
+	double totalGPUTimeMs;
 	uint64_t totalPacerTimeUs;
 	uint64_t totalPreWaitTimeUs;
 	uint64_t totalRenderTimeUs;
@@ -67,7 +68,7 @@ namespace moonlight_xbox_dx
 		void SubmitPacerTime(int64_t pacerTimeQpc);
 		void SubmitPresentPacing(double presentDisplayMs);
 		void SubmitRenderStats(double preWaitTimeMs, double renderTimeMs, double presentTimeMs, bool hitDeadline);
-		void SubmitGpuTime(float minGpuTimeMs, float maxGpuTimeMs, float avgGpuTimeMs);
+		void SubmitGpuTime(float gpuTimeMs);
 		void SubmitAudioGlitch();
 		uint32_t GetAudioGlitchCount();
 		void ResetAudioGlitchCount();
@@ -89,9 +90,7 @@ namespace moonlight_xbox_dx
 		BandwidthTracker                     m_bwTracker;
 		float                                m_avgQueueSize;
 		double                               m_avgMbpsSmoothed;
-		float                                m_minGpuTimeMs;
-		float                                m_maxGpuTimeMs;
-		float                                m_avgGpuTimeMs;
+		float                                m_gpuTimeMs;
 		uint32_t                             m_audioGlitchCount;
 	};
 }

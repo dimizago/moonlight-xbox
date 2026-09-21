@@ -102,10 +102,6 @@ bool VideoRenderer::Render(AVFrame *frame) {
 
 	auto *ctx = m_deviceResources->GetD3DDeviceContext();
 
-#if defined(_DEBUG)
-	Pacer::instance().StartGpuTimerForFrame();
-#endif
-
 	// Clear the back buffer
 	ID3D11RenderTargetView* renderTarget[] = { m_deviceResources->GetBackBufferRenderTargetView() };
 	ctx->ClearRenderTargetView(renderTarget[0], Colors::Black);
@@ -159,10 +155,6 @@ bool VideoRenderer::Render(AVFrame *frame) {
 	// Draw the video
 	ctx->DrawIndexed(6, 0, 0);
 
-#if defined(_DEBUG)
-	Pacer::instance().EndGpuTimerForFrame();
-#endif
-
 	// Unbind SRVs for this frame
 	ID3D11ShaderResourceView* nullSrvs[2] = {};
 	ctx->PSSetShaderResources(0, 2, nullSrvs);
@@ -189,17 +181,6 @@ bool VideoRenderer::Render(AVFrame *frame) {
 
 		m_LastColorTrc = frame->color_trc;
 	}
-
-#if defined(_DEBUG)
-	// This is the average GPU time as of a few frames ago
-	auto gpuTimer = Pacer::instance().GetGpuPerformanceTimer();
-	float gpuMs = gpuTimer->GetFrameTime();
-	ImGuiPlots::instance().observeFloat(PLOT_ETC, (float)gpuMs);
-	Stats::instance().SubmitGpuTime(
-		gpuTimer->GetMinFrameTime(),
-		gpuTimer->GetMaxFrameTime(),
-		gpuTimer->GetAvgFrameTime());
-#endif
 
 	return true;
 }

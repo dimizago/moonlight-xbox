@@ -135,6 +135,20 @@ static inline int64_t MsToQpc(double ms) {
 # endif
 #endif
 
+/// GPU timing
+
+// I was not able to time the GPU side of video decoding, and it may not be possible at all on Windows. I'm leaving
+// the GPU timing code disabled in case someone wants to pick this up. Set the below function to true and then wrap
+// the area to be timed with
+//
+// if (EnableGPUStats()) Pacer::instance().StartGpuTimerForFrame();
+// ...
+// if (EnableGPUStats()) Pacer::instance().EndGpuTimerForFrame();
+
+// If true, we try to measure GPU time around the DrawIndexed() call in VideoRenderer::Render(). This doesn't
+// do a good job actually measuring the video decoder, but it's here if someone wants to experiment with it.
+constexpr bool EnableGPUStats() { return false; }
+
 // Xbox helpers
 // Any Xbox
 static inline bool IsXbox()
