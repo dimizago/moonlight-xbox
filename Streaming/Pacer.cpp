@@ -257,6 +257,7 @@ bool Pacer::renderModeImmediate(std::shared_ptr<VideoRenderer> &sceneRenderer) {
 			av_frame_free(&newFrame);
 			newFrame = newFrame2;
 			ImGuiPlots::instance().observeFloat(PLOT_DROPPED_PACER, 1.0);
+			Stats::instance().SubmitDroppedFrame(1);
 		}
 	}
 
@@ -311,6 +312,7 @@ bool Pacer::renderModeDisplayLocked(std::shared_ptr<VideoRenderer> &sceneRendere
 			if (i > 0) {
 				// advanceCount was > 1, so this is a dropped frame
 				ImGuiPlots::instance().observeFloat(PLOT_DROPPED_PACER, 1.0);
+				Stats::instance().SubmitDroppedFrame(1);
 			}
 			av_frame_free(&m_CurrentFrame);
 		}
