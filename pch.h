@@ -233,7 +233,7 @@ static inline bool IsXboxOneVCR()
 
 // Sleep until approximately targetQpc, then busy-wait to land precisely.
 // sleepSlackUs: how early (in microseconds) to stop sleeping and start spinning
-static inline void SleepUntilQpc(int64_t targetQpc, int64_t sleepSlackUs = 1000) {
+static inline void SleepUntilQpc(int64_t targetQpc, int64_t sleepSlackUs = 2000) {
 	const int64_t f = QpcFreq();
 	const int64_t slack = UsToQpc(sleepSlackUs);
 	for (;;) {
