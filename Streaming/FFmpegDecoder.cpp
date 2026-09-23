@@ -70,6 +70,24 @@ namespace moonlight_xbox_dx {
 		m_CaptureTail(Concurrency::task_from_result()) {
 	}
 
+	bool FFMpegDecoder::CheckFFMpegVersion() {
+		// Ensure that we are loading the correct ffmpeg version both at compile time
+		// and runtime. This should prevent a situation we've had before where the build
+		// is created using an older ffmpeg version than intended.
+		constexpr unsigned ev = AV_VERSION_INT(62, 28, 102); // 8.1.2
+		static_assert(LIBAVCODEC_VERSION_INT == ev, "Wrong ffmpeg libavcodec version: expected 8.1.2");
+
+		const unsigned lv = avcodec_version();
+		if (lv != ev) {
+			Utils::Logf("Wrong ffmpeg libavcodec version: loaded %d.%d.%d, expected %d.%d.%d\n",
+			            AV_VERSION_MAJOR(lv), AV_VERSION_MINOR(lv), AV_VERSION_MICRO(lv),
+			            AV_VERSION_MAJOR(ev), AV_VERSION_MINOR(ev), AV_VERSION_MICRO(ev));
+			return false;
+		}
+
+		return true;
+	}
+
 	void lock_context(void *user) {
 		auto me = (FFMpegDecoder*)user;
 		me->m_mutex.lock();

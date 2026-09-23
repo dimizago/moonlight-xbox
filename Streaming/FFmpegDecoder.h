@@ -42,6 +42,7 @@ class FFMpegDecoder {
 	// Singleton accessor
 	static FFMpegDecoder &instance();
 
+	bool CheckFFMpegVersion();
 	void CompleteInitialization(const std::shared_ptr<DX::DeviceResources> &res, STREAM_CONFIGURATION *config, bool framePacingImmediate);
 	int Init(int videoFormat, int width, int height, int redrawRate, void *context, int drFlags);
 	void Cleanup();
