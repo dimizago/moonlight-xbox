@@ -40,8 +40,9 @@ struct FrameSet {
 class FramePool {
   public:
 	// count sets of 3 R16_UNORM planes at width x height (chroma planes
-	// width/2 x height/2 when chroma444 is false).
-	bool Init(ID3D11Device *device, int width, int height, bool chroma444, int count);
+	// width/2 x height/2 when chroma444 is false). shared creates them with NT
+	// handle sharing so the D3D12 decoder (PyroWaveD3D12::Decoder) can write them.
+	bool Init(ID3D11Device *device, int width, int height, bool chroma444, int count, bool shared = false);
 
 	// nullptr when all sets are in flight (caller should drop the frame).
 	FrameSet *Acquire();

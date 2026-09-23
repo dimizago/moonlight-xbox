@@ -12,7 +12,7 @@ using Microsoft::WRL::ComPtr;
 namespace moonlight_xbox_dx {
 namespace PyroWaveD3D11 {
 
-bool FramePool::Init(ID3D11Device *device, int width, int height, bool chroma444, int count) {
+bool FramePool::Init(ID3D11Device *device, int width, int height, bool chroma444, int count, bool shared) {
 	m_width = width;
 	m_height = height;
 	m_chroma444 = chroma444;
@@ -26,6 +26,8 @@ bool FramePool::Init(ID3D11Device *device, int width, int height, bool chroma444
 	desc.SampleDesc.Count = 1;
 	desc.Usage = D3D11_USAGE_DEFAULT;
 	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_UNORDERED_ACCESS;
+	if (shared)
+		desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED;
 
 	D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
 	uavDesc.Format = desc.Format;
