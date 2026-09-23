@@ -43,32 +43,50 @@ int PyroWaveDecoder::Init(int videoFormat_, int width_, int height_, int redrawR
 	bool chroma444 = (videoFormat & (VIDEO_FORMAT_PYROWAVE_444 | VIDEO_FORMAT_PYROWAVE10_444)) != 0;
 
 	auto *device = m_deviceResources->GetD3DDevice();
-	m_decoder = std::make_unique<PyroWaveD3D11::Decoder>();
-	if (!m_decoder->Init(device, width, height, chroma444)) {
-		Utils::Log("PyroWave live: decoder Init failed\n");
-		m_decoder.reset();
-		return -1;
-	}
 	// 6 sets: DUs can arrive in a burst right after loss recovery while the
 	// renderer is still catching up (observed pool exhaustion with 4 at
 	// 4K120 during torture testing).
+	const int poolSize = 6;
+
+	m_decoder.reset();
+	m_decoder12.reset();
+	if (kPreferD3D12) {
+		auto decoder12 = std::make_unique<PyroWaveD3D12::Decoder>();
+		if (decoder12->Init(device, m_deviceResources->GetD3DDeviceContext(), width, height, chroma444, poolSize))
+			m_decoder12 = std::move(decoder12);
+		else
+			Utils::Log("PyroWave live: D3D12 decoder unavailable, falling back to D3D11\n");
+	}
+	if (!m_decoder12) {
+		m_decoder = std::make_unique<PyroWaveD3D11::Decoder>();
+		if (!m_decoder->Init(device, width, height, chroma444)) {
+			Utils::Log("PyroWave live: decoder Init failed\n");
+			m_decoder.reset();
+			return -1;
+		}
+	}
+
+	// The D3D12 decoder writes the planes from its own device, so they are shared.
 	m_pool = std::make_unique<PyroWaveD3D11::FramePool>();
-	if (!m_pool->Init(device, width, height, chroma444, 6)) {
+	if (!m_pool->Init(device, width, height, chroma444, poolSize, m_decoder12 != nullptr)) {
 		Utils::Log("PyroWave live: FramePool Init failed\n");
 		m_decoder.reset();
+		m_decoder12.reset();
 		m_pool.reset();
 		return -1;
 	}
 
 	m_active = true;
-	Utils::Logf("PyroWave live: init %dx%d %s, format 0x%04x\n",
-	            width, height, chroma444 ? "4:4:4" : "4:2:0", videoFormat);
+	Utils::Logf("PyroWave live: init %dx%d %s, format 0x%04x, %s decoder\n",
+	            width, height, chroma444 ? "4:4:4" : "4:2:0", videoFormat,
+	            m_decoder12 ? "D3D12 (SM 6.4 wave ops)" : "D3D11 (SM 5.0)");
 	return 0;
 }
 
 void PyroWaveDecoder::Cleanup() {
 	m_active = false;
 	m_decoder.reset();
+	m_decoder12.reset();
 	if (m_pool) {
 		// Frames wrapped around this pool's sets may still sit in Pacer's
 		// queue until it drains; keep the pool alive until the next Init.
@@ -202,7 +220,7 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 	if (m_StreamEpochQpc == 0)
 		m_StreamEpochQpc = decodeStart.QuadPart;
 
-	if (!m_decoder || !m_pool)
+	if ((!m_decoder && !m_decoder12) || !m_pool)
 		return DR_OK;
 
 	// Reassemble the decode unit
@@ -221,7 +239,7 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 		// it for several more frames (or merge two frames at diff==0). We
 		// know the exact gap from frameNumber, so force a full sequence
 		// reset and let this frame's sequence be adopted unconditionally.
-		m_decoder->Clear();
+		BackendClear();
 	}
 	m_LastFrameNumber = decodeUnit->frameNumber;
 
@@ -272,16 +290,16 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 			// Truncated final chunk. It can still hold whole pyrowave packets
 			// ahead of the cut, so decode as far as the data goes.
 			if (partial)
-				m_decoder->PushPacket(m_duBuffer.data() + pos, length - pos, true);
+				BackendPushPacket(m_duBuffer.data() + pos, length - pos, true);
 			else
 				Utils::Logf("PyroWave live: chunk %u overruns DU (frame %d)\n", i, decodeUnit->frameNumber);
 			break;
 		}
-		m_decoder->PushPacket(m_duBuffer.data() + pos, sz);
+		BackendPushPacket(m_duBuffer.data() + pos, sz);
 		pos += sz;
 	}
 
-	if (!m_decoder->DecodeIsReady(partial)) {
+	if (!BackendDecodeIsReady(partial)) {
 		// For a complete DU this should not happen. For a partial one it just
 		// means too little of the frame survived to be worth showing (the
 		// decoder requires the coarse wavelet levels, 4 and 3, to be fully
@@ -289,7 +307,7 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 		// flashing a wrecked one.
 		if (!partial)
 			Utils::Logf("PyroWave live: frame %d not decodable, dropping\n", decodeUnit->frameNumber);
-		m_decoder->Clear();
+		BackendClear();
 		return DR_OK;
 	}
 
@@ -300,9 +318,9 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 	// says how many the host sent, the decoder counted how many arrived.
 	if (partial && m_partialCapturesRemaining.load(std::memory_order_relaxed) > 0) {
 		m_partialCapturesRemaining.fetch_sub(1, std::memory_order_relaxed);
-		int totalBlocks = m_decoder->TotalBlocksInSequence();
+		int totalBlocks = BackendTotalBlocksInSequence();
 		int lostPercent = totalBlocks > 0
-		    ? 100 - (100 * m_decoder->DecodedBlocks()) / totalBlocks
+		    ? 100 - (100 * BackendDecodedBlocks()) / totalBlocks
 		    : 0;
 		WriteCaptureAsync(length, decodeUnit->frameNumber, lostPercent);
 	}
@@ -311,7 +329,7 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 	if (!set) {
 		// All plane sets in flight (renderer far behind); drop this frame.
 		Utils::Log("PyroWave live: frame pool exhausted, dropping frame\n");
-		m_decoder->Clear();
+		BackendClear();
 		return DR_OK;
 	}
 
@@ -323,10 +341,16 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 		// The immediate context is shared with the render thread
 		auto guard = FFMpegDecoder::Lock();
 		auto *ctx = m_deviceResources->GetD3DDeviceContext();
-		decoded = m_decoder->Decode(ctx, uavs);
-		// Non-blocking: retrieves the measurement of a frame decoded a few
-		// frames ago, if the GPU has finished it.
-		haveGpuMs = m_decoder->PollGpuTimeMs(ctx, &gpuMs);
+		if (m_decoder12) {
+			decoded = m_decoder12->Decode(ctx, set);
+			haveGpuMs = m_decoder12->PollGpuTimeMs(&gpuMs);
+		}
+		else {
+			decoded = m_decoder->Decode(ctx, uavs);
+			// Non-blocking: retrieves the measurement of a frame decoded a few
+			// frames ago, if the GPU has finished it.
+			haveGpuMs = m_decoder->PollGpuTimeMs(ctx, &gpuMs);
+		}
 	}
 	if (haveGpuMs)
 		Stats::instance().SubmitGpuDecodeMs(gpuMs);
@@ -359,6 +383,30 @@ int PyroWaveDecoder::SubmitDecodeUnit(PDECODE_UNIT decodeUnit) {
 
 	Stats::instance().SubmitDecodeMs(QpcToMs(decodeEnd.QuadPart - decodeStart.QuadPart));
 	return DR_OK;
+}
+
+bool PyroWaveDecoder::BackendPushPacket(const void *data, size_t size, bool allowTruncated) {
+	return m_decoder12 ? m_decoder12->PushPacket(data, size, allowTruncated)
+	                   : m_decoder->PushPacket(data, size, allowTruncated);
+}
+
+bool PyroWaveDecoder::BackendDecodeIsReady(bool allowPartialFrame) {
+	return m_decoder12 ? m_decoder12->DecodeIsReady(allowPartialFrame) : m_decoder->DecodeIsReady(allowPartialFrame);
+}
+
+void PyroWaveDecoder::BackendClear() {
+	if (m_decoder12)
+		m_decoder12->Clear();
+	else if (m_decoder)
+		m_decoder->Clear();
+}
+
+int PyroWaveDecoder::BackendDecodedBlocks() {
+	return m_decoder12 ? m_decoder12->DecodedBlocks() : m_decoder->DecodedBlocks();
+}
+
+int PyroWaveDecoder::BackendTotalBlocksInSequence() {
+	return m_decoder12 ? m_decoder12->TotalBlocksInSequence() : m_decoder->TotalBlocksInSequence();
 }
 
 } // namespace moonlight_xbox_dx

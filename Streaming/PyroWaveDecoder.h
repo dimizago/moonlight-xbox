@@ -10,6 +10,7 @@
 // plane sets via the AVFrame free callback).
 
 #include "PyroWave\D3D11Decoder.h"
+#include "PyroWave\D3D12Decoder.h"
 #include "PyroWave\FramePool.h"
 #include <atomic>
 #include <memory>
@@ -39,6 +40,14 @@ class PyroWaveDecoder {
 	int SubmitDecodeUnit(PDECODE_UNIT decodeUnit);
 
 	bool IsActive() const { return m_active; }
+
+	// True when the D3D12 (Shader Model 6.4 wave op) decoder is in use rather than
+	// the D3D11 fallback. Decided per stream in Init().
+	bool UsingD3D12() const { return m_decoder12 != nullptr; }
+
+	// Try the D3D12 decoder first; the D3D11 one is used when this is false or
+	// the D3D12 path is unavailable on the device.
+	static constexpr bool kPreferD3D12 = true;
 
 	// Dev tool: arm a capture of the next few complete decode units, written to
 	// LocalState as the same [u32 count]{[u32 size][bytes]}* framing the host
@@ -70,7 +79,16 @@ class PyroWaveDecoder {
 	int m_negColorSpace = 0;  // COLORSPACE_* from STREAM_CONFIGURATION
 	int m_negColorRange = 0;  // COLOR_RANGE_*
 
+	// Exactly one of these is set while a stream is active.
 	std::unique_ptr<PyroWaveD3D11::Decoder> m_decoder;
+	std::unique_ptr<PyroWaveD3D12::Decoder> m_decoder12;
+
+	// Forwarders to whichever backend is active.
+	bool BackendPushPacket(const void *data, size_t size, bool allowTruncated = false);
+	bool BackendDecodeIsReady(bool allowPartialFrame);
+	void BackendClear();
+	int BackendDecodedBlocks();
+	int BackendTotalBlocksInSequence();
 	std::unique_ptr<PyroWaveD3D11::FramePool> m_pool;
 	// Pools whose frames may still be in flight when a new session starts;
 	// freed on the next Init (Pacer has long since drained them by then).
