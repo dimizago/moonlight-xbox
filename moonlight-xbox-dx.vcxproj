@@ -47,6 +47,10 @@
     <ApplicationTypeRevision>10.0</ApplicationTypeRevision>
     <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
   </PropertyGroup>
+  <PropertyGroup>
+    <!-- PyroWave D3D12 backend (pyrowave repo, d3d12/). Defaults to the sibling checkout. -->
+    <PyroWaveD3D12Dir Condition="'$(PyroWaveD3D12Dir)'==''">$(MSBuildProjectDirectory)\..\pyrowave\</PyroWaveD3D12Dir>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -237,7 +241,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
-      <AdditionalDependencies>$(ProjectDir)/libgamestream/build/$(Configuration)/gamestream.lib;$(ProjectDir)/third_party/DirectXTK/Bin/Windows10_2022/x64/$(Configuration)/DirectXTK.lib;libexpat.lib;libcurl.lib;libcrypto.lib;libssl.lib;avcodec.lib;avformat.lib;avutil.lib;swscale.lib;d2d1.lib;d3d11.lib;dxgi.lib;dxguid.lib;windowscodecs.lib;dwrite.lib;ws2_32.lib;opus.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)/libgamestream/build/$(Configuration)/gamestream.lib;$(ProjectDir)/third_party/DirectXTK/Bin/Windows10_2022/x64/$(Configuration)/DirectXTK.lib;libexpat.lib;libcurl.lib;libcrypto.lib;libssl.lib;avcodec.lib;avformat.lib;avutil.lib;swscale.lib;d2d1.lib;d3d11.lib;d3d12.lib;dxgi.lib;dxguid.lib;windowscodecs.lib;dwrite.lib;ws2_32.lib;opus.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);$(ProjectDir)vcpkg_installed\x64-uwp\lib;$(VCInstallDir)\lib\store\amd64;$(VCInstallDir)\lib\amd64;$(ProjectDir)third_party\moonlight-common-c\build\$(Configuration)\</AdditionalLibraryDirectories>
     </Link>
     <ClCompile>
@@ -256,7 +260,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Link>
-      <AdditionalDependencies>$(ProjectDir)/libgamestream/build/$(Configuration)/gamestream.lib;$(ProjectDir)/third_party/DirectXTK/Bin/Windows10_2022/x64/$(Configuration)/DirectXTK.lib;libexpat.lib;libcurl.lib;libcrypto.lib;libssl.lib;avcodec.lib;avformat.lib;avutil.lib;swscale.lib;d2d1.lib;d3d11.lib;dxgi.lib;windowscodecs.lib;dwrite.lib;ws2_32.lib;opus.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)/libgamestream/build/$(Configuration)/gamestream.lib;$(ProjectDir)/third_party/DirectXTK/Bin/Windows10_2022/x64/$(Configuration)/DirectXTK.lib;libexpat.lib;libcurl.lib;libcrypto.lib;libssl.lib;avcodec.lib;avformat.lib;avutil.lib;swscale.lib;d2d1.lib;d3d11.lib;d3d12.lib;dxgi.lib;windowscodecs.lib;dwrite.lib;ws2_32.lib;opus.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories);$(ProjectDir)vcpkg_installed\x64-uwp\lib;$(VCInstallDir)\lib\store\amd64;$(VCInstallDir)\lib\amd64;$(ProjectDir)third_party\moonlight-common-c\build\$(Configuration)\</AdditionalLibraryDirectories>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
@@ -355,6 +359,7 @@
     <ClInclude Include="Streaming\FrameQueue.h" />
     <ClInclude Include="Streaming\Pacer.h" />
     <ClInclude Include="Streaming\PyroWave\D3D11Decoder.h" />
+    <ClInclude Include="Streaming\PyroWave\D3D12Decoder.h" />
     <ClInclude Include="Streaming\PyroWave\FramePool.h" />
     <ClInclude Include="Streaming\PyroWaveDecoder.h" />
     <ClInclude Include="Streaming\PacerCompat.h" />
@@ -500,6 +505,24 @@
     <ClCompile Include="Streaming\LogRenderer.cpp" />
     <ClCompile Include="Streaming\Pacer.cpp" />
     <ClCompile Include="Streaming\PyroWave\D3D11Decoder.cpp" />
+    <ClCompile Include="Streaming\PyroWave\D3D12Decoder.cpp">
+      <AdditionalIncludeDirectories>$(PyroWaveD3D12Dir)d3d12;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <ClCompile Include="$(PyroWaveD3D12Dir)d3d12\pyrowave_d3d12_device.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="$(PyroWaveD3D12Dir)d3d12\pyrowave_d3d12_decoder.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="$(PyroWaveD3D12Dir)metal\pyrowave_bitstream.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <CompileAsWinRT>false</CompileAsWinRT>
+      <PreprocessorDefinitions>NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="Streaming\PyroWave\FramePool.cpp" />
     <ClCompile Include="Streaming\PyroWaveDecoder.cpp" />
     <ClCompile Include="Streaming\VideoRenderer.cpp" />
