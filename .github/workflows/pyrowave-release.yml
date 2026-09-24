@@ -1,0 +1,137 @@
+---
+# Builds the signed x64 sideload package of the PyroWave branch. A pushed
+# v*-pyrowave.* tag also publishes it as a GitHub release, using
+# release_notes/<tag>.md from the tagged commit as the description.
+name: PyroWave release
+
+on:
+  push:
+    tags: ['v*-pyrowave.*']
+  workflow_dispatch:
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.ref }}"
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-binary-cache,readwrite
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Check release notes
+      if: env.IS_TAG == 'true'
+      run: |
+        $notes = "release_notes/${{ github.ref_name }}.md"
+        if (-not (Test-Path $notes)) { throw "$notes is missing from the tagged commit" }
+
+    - name: Add MSBuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Add NuGet to PATH
+      uses: nuget/setup-nuget@v2
+
+    # Upstream's prebuilt vcpkg_installed.zip (1.10.0) predates the FFmpeg 8.1.2
+    # pin, so build the packages here and keep vcpkg's binary cache between runs.
+    - name: Bootstrap vcpkg
+      id: vcpkg
+      run: |
+        .\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+        "commit=$(git -C vcpkg rev-parse HEAD)" >> $env:GITHUB_OUTPUT
+
+    - name: Restore vcpkg binaries
+      id: vcpkg-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-binary-cache
+        key: vcpkg-x64-uwp-${{ steps.vcpkg.outputs.commit }}-${{ hashFiles('vcpkg.json') }}
+        restore-keys: vcpkg-x64-uwp-
+
+    - name: Install vcpkg packages
+      run: |
+        New-Item -ItemType Directory -Force vcpkg-binary-cache | Out-Null
+        # No --vcpkg-root: a relative one breaks vcpkg's nested tool downloads.
+        .\vcpkg\vcpkg.exe install --triplet x64-uwp --disable-metrics
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    # Saved right away, so a later build failure doesn't throw the packages away.
+    - name: Save vcpkg binaries
+      if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: vcpkg-binary-cache
+        key: vcpkg-x64-uwp-${{ steps.vcpkg.outputs.commit }}-${{ hashFiles('vcpkg.json') }}
+
+    - name: Build third party tools
+      run: .\generate-thirdparty-projects.bat
+
+    - name: Restore NuGet
+      run: nuget restore .
+
+    - name: Load signing certificate
+      env:
+        CERTIFICATE_FILE: ${{ secrets.PYROWAVE_CERT_PFX }}
+      run: |
+        if (-not $env:CERTIFICATE_FILE) { throw 'The PYROWAVE_CERT_PFX secret is not set' }
+        [IO.File]::WriteAllBytes("$PWD\cert.pfx", [Convert]::FromBase64String($env:CERTIFICATE_FILE))
+
+    - name: Build
+      env:
+        CERTIFICATE_PASSWORD: ${{ secrets.PYROWAVE_CERT_PASSWORD }}
+      run: |
+        # The project pins a developer certificate thumbprint; clear it so the
+        # key file is used.
+        msbuild /m /nologo /v:m `
+          /p:Configuration=Release `
+          /p:Platform=x64 `
+          /p:AppxBundle=Never `
+          /p:UapAppxPackageBuildMode=SideLoadOnly `
+          "/p:AppxPackageDir=$PWD\output\" `
+          "/p:PackageCertificateKeyFile=$PWD\cert.pfx" `
+          "/p:PackageCertificatePassword=$env:CERTIFICATE_PASSWORD" `
+          /p:PackageCertificateThumbprint= `
+          moonlight-xbox-dx.sln
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    - name: Remove signing certificate
+      if: always()
+      run: Remove-Item cert.pfx -ErrorAction SilentlyContinue
+
+    - name: Collect package files
+      run: |
+        $package = Get-ChildItem output -Directory -Filter '*_x64_Test' | Select-Object -First 1
+        if (-not $package) { throw 'No package folder under output' }
+        New-Item -ItemType Directory release | Out-Null
+        Get-ChildItem "$($package.FullName)\*" -File -Include *.msix, *.cer | Copy-Item -Destination release
+        Copy-Item "$($package.FullName)\Dependencies\x64\*.appx" release
+        $files = Get-ChildItem release
+        $files | Format-Table Name, Length
+        if (-not ($files | Where-Object Extension -eq '.msix')) { throw 'No .msix was produced' }
+        if (($files | Where-Object Extension -eq '.appx').Count -lt 2) { throw 'Missing dependency packages' }
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: moonlight-pyrowave-x64
+        path: release
+
+    - name: Publish release
+      if: env.IS_TAG == 'true' && !env.ACT
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ github.ref_name }}
+      run: |
+        gh release create $env:TAG (Get-ChildItem release).FullName `
+          --verify-tag `
+          --prerelease `
+          --title "Moonlight PyroWave $env:TAG" `
+          --notes-file "release_notes/$env:TAG.md"
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
