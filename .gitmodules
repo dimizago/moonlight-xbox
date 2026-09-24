@@ -1,6 +1,7 @@
 [submodule "third_party/moonlight-common-c"]
 	path = third_party/moonlight-common-c
-	url = https://github.com/andygrundman/moonlight-common-c.git
+	url = https://github.com/dimizago/moonlight-common-c.git
+	branch = pyrowave-d3d12
 [submodule "vcpkg"]
 	path = vcpkg
 	url = https://github.com/microsoft/vcpkg.git
