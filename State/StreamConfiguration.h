@@ -23,6 +23,7 @@ namespace moonlight_xbox_dx
 		property bool enableSOPS;
 		property bool enableStats;
 		property bool enableGraphs;
+		property bool logStats;
 	};
 
 	moonlight_xbox_dx::StreamConfiguration^ GetStreamConfig();

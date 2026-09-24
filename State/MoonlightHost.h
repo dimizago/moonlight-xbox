@@ -34,6 +34,7 @@ namespace moonlight_xbox_dx {
         bool enableSOPS = false;
         bool enableStats = false;
         bool enableGraphs = true;
+        bool logStats = false;
         Windows::Foundation::Collections::IVector<MoonlightApp^>^ apps;
     public:
         //Thanks to https://phsucharee.wordpress.com/2013/06/19/data-binding-and-ccx-inotifypropertychanged/
@@ -316,6 +317,15 @@ namespace moonlight_xbox_dx {
             void set(bool value) {
                 this->enableGraphs = value;
                 OnPropertyChanged("EnableGraphs");
+            }
+        }
+
+        property bool LogStats
+        {
+            bool get() { return this->logStats; }
+            void set(bool value) {
+                this->logStats = value;
+                OnPropertyChanged("LogStats");
             }
         }
     };

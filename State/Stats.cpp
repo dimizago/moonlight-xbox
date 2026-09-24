@@ -1,4 +1,5 @@
 #include "pch.h"
+#include <share.h>
 #include "Stats.h"
 #include "Utils.hpp"
 #include "../Plot/ImGuiPlots.h"
@@ -52,14 +53,28 @@ bool Stats::ShouldUpdateDisplay(DX::StepTimer const& timer, bool isVisible, char
 	if (timer.GetTotalSeconds() - m_ActiveWndVideoStats.measurementStartTimestamp >= 1.0) {
 		std::lock_guard<std::mutex> lock(m_mutex);
 
-		if (isVisible) {
+		if (isVisible || m_logFile) {
 			// Display using data from the last 2 window periods
 			VIDEO_STATS lastTwoWndStats = {};
 			addVideoStats(timer, m_LastWndVideoStats, lastTwoWndStats);
 			addVideoStats(timer, m_ActiveWndVideoStats, lastTwoWndStats);
 
-			formatVideoStats(timer, lastTwoWndStats, output, length);
-			shouldUpdate = true;
+			if (isVisible) {
+				formatVideoStats(timer, lastTwoWndStats, output, length);
+				shouldUpdate = true;
+			}
+
+			if (m_logFile) {
+				char text[4096];
+				formatVideoStats(timer, lastTwoWndStats, text, sizeof(text));
+				SYSTEMTIME now;
+				GetLocalTime(&now);
+				fprintf(m_logFile, "--- %02d:%02d:%02d t=%.0f s\n%s\n", now.wHour, now.wMinute, now.wSecond,
+				        timer.GetTotalSeconds(), text);
+				fflush(m_logFile);
+				m_logTimer = timer;
+				m_logHasTimer = true;
+			}
 		}
 
 		// Accumulate these values into the global stats
@@ -89,6 +104,7 @@ void Stats::SubmitVideoBytesAndReassemblyTime(uint32_t length, PDECODE_UNIT deco
 
 	// bandwidth
 	m_bwTracker.AddBytes(length);
+	m_ActiveWndVideoStats.receivedBytes += length;
 
 	// reassembly time
 	uint32_t reassemblyUs = (uint32_t)(decodeUnit->enqueueTimeUs - decodeUnit->receiveTimeUs);
@@ -135,6 +151,44 @@ void Stats::SubmitAudioGlitch() {
 uint32_t Stats::GetAudioGlitchCount() {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	return m_audioGlitchCount;
+}
+
+void Stats::BeginFileLog(const std::wstring& path, const std::string& header) {
+	EndFileLog();
+	std::lock_guard<std::mutex> lock(m_mutex);
+	// Deny writes only, so the log can be read while the stream is still running.
+	m_logFile = _wfsopen(path.c_str(), L"wb", _SH_DENYWR);
+	if (!m_logFile) {
+		Utils::Log("Stats: could not open the stream stats log\n");
+		return;
+	}
+	fputs(header.c_str(), m_logFile);
+	fflush(m_logFile);
+	m_logHasTimer = false;
+}
+
+void Stats::EndFileLog() {
+	std::lock_guard<std::mutex> lock(m_mutex);
+	if (!m_logFile)
+		return;
+	if (m_logHasTimer && m_GlobalVideoStats.totalFrames > 0) {
+		char text[4096];
+		formatVideoStats(m_logTimer, m_GlobalVideoStats, text, sizeof(text));
+
+		// The overlay's bitrate line is the bandwidth tracker's last 10 s, not the stream.
+		std::string summary(text);
+		const size_t begin = summary.find("Bitrate: ");
+		const double seconds = m_logTimer.GetTotalSeconds() - m_GlobalVideoStats.measurementStartTimestamp;
+		if (begin != std::string::npos && seconds > 0) {
+			const size_t end = summary.find('\n', begin);
+			char line[128];
+			sprintf_s(line, "Bitrate: %.1f Mbps average over %.0f s", double(m_GlobalVideoStats.receivedBytes) * 8.0 / seconds / 1e6, seconds);
+			summary.replace(begin, (end == std::string::npos ? summary.size() : end) - begin, line);
+		}
+		fprintf(m_logFile, "=== Whole stream ===\n%s\n", summary.c_str());
+	}
+	fclose(m_logFile);
+	m_logFile = nullptr;
 }
 
 void Stats::ResetAudioGlitchCount() {
@@ -216,6 +270,7 @@ void Stats::addVideoStats(DX::StepTimer const& timer, VIDEO_STATS& src, VIDEO_ST
 	dst.totalFrames += src.totalFrames;
 	dst.networkDroppedFrames += src.networkDroppedFrames;
 	dst.partialFrames += src.partialFrames;
+	dst.receivedBytes += src.receivedBytes;
 	dst.pacerDroppedFrames += src.pacerDroppedFrames;
 	dst.hitDeadlines += src.hitDeadlines;
 	dst.missedDeadlines += src.missedDeadlines;

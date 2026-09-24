@@ -148,6 +148,25 @@ moonlight_xbox_dxMain::moonlight_xbox_dxMain(const std::shared_ptr<DX::DeviceRes
 	// Reset Stats since it may have data from a prior stream
 	Stats::instance().Reset();
 
+	if (configuration->logStats) {
+		SYSTEMTIME now;
+		GetLocalTime(&now);
+		wchar_t name[64];
+		swprintf_s(name, L"\\stream_stats_%04d%02d%02d-%02d%02d%02d.log", now.wYear, now.wMonth, now.wDay,
+		           now.wHour, now.wMinute, now.wSecond);
+		std::wstring path = std::wstring(Windows::Storage::ApplicationData::Current->LocalFolder->Path->Data()) + name;
+		char header[512];
+		sprintf_s(header, "Moonlight stream stats %04d-%02d-%02d %02d:%02d:%02d\nHost %s, app %s\nRequested %dx%d@%d, %d Kbps, codec %s, HDR %s, packet size %d, frame pacing %s\n\n",
+		          now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
+		          Utils::PlatformStringToStdString(configuration->hostname).c_str(),
+		          Utils::PlatformStringToStdString(configuration->appName).c_str(),
+		          configuration->width, configuration->height, configuration->FPS, configuration->bitrate,
+		          Utils::PlatformStringToStdString(configuration->videoCodec).c_str(),
+		          configuration->enableHDR ? "on" : "off", configuration->packetSize,
+		          Utils::PlatformStringToStdString(configuration->framePacing).c_str());
+		Stats::instance().BeginFileLog(path, header);
+	}
+
 	// We're now connected and can register for gamepad events
 	for (int i = 0; i < MAX_GAMEPADS; i++) {
 		GamepadState &state = m_GamepadState[i];
@@ -202,6 +221,7 @@ moonlight_xbox_dxMain::moonlight_xbox_dxMain(const std::shared_ptr<DX::DeviceRes
 }
 
 moonlight_xbox_dxMain::~moonlight_xbox_dxMain() {
+	Stats::instance().EndFileLog();
 	// Deregister device notification
 	m_deviceResources->RegisterDeviceNotify(nullptr);
 }
@@ -371,6 +391,7 @@ void moonlight_xbox_dxMain::StartRenderLoop() {
 void moonlight_xbox_dxMain::StopRenderLoop() {
 	m_renderLoopWorker->Cancel();
 	m_inputLoopWorker->Cancel();
+	Stats::instance().EndFileLog();
 }
 
 // Updates the application state once per frame.
