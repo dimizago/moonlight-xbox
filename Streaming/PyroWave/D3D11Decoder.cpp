@@ -352,6 +352,13 @@ bool Decoder::PushPacket(const void *data_, size_t size, bool allowTruncated) {
 		}
 
 		size_t packetSize = header->payload_words * sizeof(uint32_t);
+		// A packet cannot be shorter than its own header. payload_words == 0 would not
+		// advance the loop below, and a repeated block index returns success without
+		// consuming anything, so it would spin forever.
+		if (packetSize < sizeof(*header)) {
+			Utils::Log("PyroWave: payload_words is not large enough\n");
+			return false;
+		}
 		if (packetSize > size) {
 			if (allowTruncated) {
 				// Even the truncated packet's header is evidence for the

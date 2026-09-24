@@ -126,6 +126,8 @@ static void print_verbose_structure(const std::vector<uint8_t> &stream, size_t s
 			continue;
 		}
 		size_t packetSize = size_t(hdr.payload_words) * sizeof(uint32_t);
+		if (packetSize < sizeof(BitstreamHeader))
+			break; // malformed; the pass below reports it
 		int blockIndex = int(hdr.block_index);
 		bool attributed = false;
 		for (auto &bi : bands) {
