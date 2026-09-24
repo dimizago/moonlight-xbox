@@ -12,4 +12,5 @@
 	url = https://github.com/ocornut/imgui.git
 [submodule "third_party/pyrowave"]
 	path = third_party/pyrowave
-	url = https://github.com/andygrundman/pyrowave.git
+	url = https://github.com/dimizago/pyrowave.git
+	branch = d3d12

@@ -48,8 +48,13 @@
     <AppxPackageSigningEnabled>True</AppxPackageSigningEnabled>
   </PropertyGroup>
   <PropertyGroup>
-    <!-- PyroWave D3D12 backend (pyrowave repo, d3d12/). Defaults to the sibling checkout. -->
-    <PyroWaveD3D12Dir Condition="'$(PyroWaveD3D12Dir)'==''">$(MSBuildProjectDirectory)\..\pyrowave\</PyroWaveD3D12Dir>
+    <!-- PyroWave D3D12 backend (d3d12/ of the third_party/pyrowave submodule, the
+         dimizago/pyrowave d3d12 branch). Its Xbox decoder kernels are what make
+         4K PyroWave decoding fit this app's GPU budget: hevcPlayback, needed for
+         HDR10 output, confines the app to the console's reduced media-app GPU
+         partition (see pyrowave d3d12/README.md). Set PyroWaveD3D12Dir, e.g. in
+         the .vcxproj.user, to build from another pyrowave checkout. -->
+    <PyroWaveD3D12Dir Condition="'$(PyroWaveD3D12Dir)'==''">$(MSBuildProjectDirectory)\third_party\pyrowave\</PyroWaveD3D12Dir>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
